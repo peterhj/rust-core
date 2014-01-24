@@ -102,7 +102,10 @@ impl<A: Send, T: GenericQueue<A>> QueuePtr<T> {
             let ptr: &mut QueueBox<T> = transmute(self.ptr.borrow());
             let _guard = ptr.mutex.lock_guard();
             ptr.queue.generic_push(item);
-            ptr.not_empty.signal()
+            let was_empty = ptr.queue.len() == 1;
+            if was_empty {
+                ptr.not_empty.signal()
+            }
         }
     }
 }
@@ -215,6 +218,20 @@ impl<A: Send, T: GenericQueue<A>> BoundedQueuePtr<T> {
         }
     }
 
+    unsafe fn signal_if_was_full(&self) {
+        let ptr: &mut BoundedQueueBox<T> = transmute(self.ptr.borrow());
+        if ptr.deque.len() + 1 == ptr.maximum {
+            ptr.not_full.signal()
+        }
+    }
+
+    unsafe fn signal_if_was_empty(&self) {
+        let ptr: &mut BoundedQueueBox<T> = transmute(self.ptr.borrow());
+        if ptr.deque.len() == 1 {
+            ptr.not_empty.signal()
+        }
+    }
+
     fn pop(&self) -> A {
         unsafe {
             let ptr: &mut BoundedQueueBox<T> = transmute(self.ptr.borrow());
@@ -223,7 +240,7 @@ impl<A: Send, T: GenericQueue<A>> BoundedQueuePtr<T> {
                 ptr.not_empty.wait_guard(&mut guard)
             }
             let item = ptr.deque.generic_pop().get();
-            ptr.not_full.signal();
+            self.signal_if_was_full();
             item
         }
     }
@@ -234,7 +251,7 @@ impl<A: Send, T: GenericQueue<A>> BoundedQueuePtr<T> {
             let _guard = ptr.mutex.lock_guard();
             match ptr.deque.generic_pop() {
                 Some(x) => {
-                    ptr.not_full.signal();
+                    self.signal_if_was_full();
                     Some(x)
                 }
                 None => None
@@ -256,7 +273,7 @@ impl<A: Send, T: GenericQueue<A>> BoundedQueuePtr<T> {
                 }
             }
             let item = ptr.deque.generic_pop().get();
-            ptr.not_full.signal();
+            self.signal_if_was_full();
             Some(item)
         }
     }
@@ -269,7 +286,7 @@ impl<A: Send, T: GenericQueue<A>> BoundedQueuePtr<T> {
                 ptr.not_full.wait_guard(&mut guard)
             }
             ptr.deque.generic_push(item);
-            ptr.not_empty.signal()
+            self.signal_if_was_empty()
         }
     }
 
@@ -281,7 +298,7 @@ impl<A: Send, T: GenericQueue<A>> BoundedQueuePtr<T> {
                 Some(item)
             } else {
                 ptr.deque.generic_push(item);
-                ptr.not_empty.signal();
+                self.signal_if_was_empty();
                 None
             }
         }
@@ -301,7 +318,7 @@ impl<A: Send, T: GenericQueue<A>> BoundedQueuePtr<T> {
                 }
             }
             ptr.deque.generic_push(item);
-            ptr.not_empty.signal();
+            self.signal_if_was_empty();
             None
         }
     }

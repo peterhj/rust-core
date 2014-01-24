@@ -40,6 +40,7 @@ fn main(_: int, _: **u8) -> int {
     let queue = Queue::<int>::new();
 
     let active = 10;
+    let n = 100000;
 
     let send_queue = queue.clone();
     let consumer = spawn(proc() {
@@ -63,7 +64,7 @@ fn main(_: int, _: **u8) -> int {
         let send_queue = queue.clone();
         spawn_detached(proc() {
             let mut i = 0;
-            while i < 1000 {
+            while i < n {
                 send_queue.push(i);
                 i += 1;
             }
@@ -72,7 +73,7 @@ fn main(_: int, _: **u8) -> int {
         i += 1;
     }
 
-    if *consumer.join() != 10000 {
+    if *consumer.join() != n * active {
         abort()
     }
 
